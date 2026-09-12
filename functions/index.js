@@ -25,7 +25,6 @@ const isRegistrationOpen = () => {
 const ERROR_CODES = {
   TRANSACTION_ABORTED: 10,
   DEADLINE_EXCEEDED: 4,
-  RESOURCE_EXHAUSTED: 8,
   UNAVAILABLE: 14
 };
 
@@ -111,13 +110,10 @@ const calculateBackoffDelay = (attempt) => {
 // 🔥 안전한 비동기 로깅 함수
 const safeAsyncLog = async (logData, context = {}) => {
   try {
-    await db.runTransaction(async (transaction) => {
-      const logRef = db.collection('registrationLogs').doc();
-      transaction.set(logRef, {
-        ...logData,
-        timestamp: FieldValue.serverTimestamp(),
-        context
-      });
+    await db.collection('registrationLogs').doc().set({
+      ...logData,
+      timestamp: FieldValue.serverTimestamp(),
+      context
     });
   } catch (logError) {
     if (isDev) {
@@ -144,8 +140,6 @@ exports.registerWithLimit = onCall(async (request) => {
   const validatedData = validateInput(request.data);
   const { name, school, contact, people } = validatedData;
 
-  const userAgent = request.rawRequest?.headers?.['user-agent']?.substring(0, 200) || 'unknown';
-  const ip = request.rawRequest?.ip || 'unknown';
   const baseTimestamp = Date.now();
 
   const contactRef = db.collection('registrations').doc(contact);
@@ -192,10 +186,6 @@ exports.registerWithLimit = onCall(async (request) => {
           timestamp: FieldValue.serverTimestamp(),
           registrationId,
           status: 'confirmed',
-          checksum: `${contact}-${people}-${startNumber}-${endNumber}`,
-          version: 1,
-          userAgent,
-          ip,
           attempts
         };
 
@@ -203,9 +193,7 @@ exports.registerWithLimit = onCall(async (request) => {
 
         const counterData = {
           count: newTotal,
-          lastUpdated: FieldValue.serverTimestamp(),
-          lastRegistration: registrationId,
-          version: counterDoc.exists ? FieldValue.increment(1) : 1
+          lastUpdated: FieldValue.serverTimestamp()
         };
 
         if (counterDoc.exists) {
@@ -225,18 +213,16 @@ exports.registerWithLimit = onCall(async (request) => {
         };
       });
 
-      // 🔥 성공 후 비동기 로그 작성
-      setTimeout(() => {
-        safeAsyncLog({
-          action: 'register',
-          contact,
-          people,
-          numbers: result.yourNumbers,
-          registrationId: result.registrationId,
-          success: true,
-          attempts: result.attempts
-        });
-      }, 100);
+      // 🔥 성공 로그 — 응답 반환 전에 기록을 보장한다
+      await safeAsyncLog({
+        action: 'register',
+        contact,
+        people,
+        numbers: result.yourNumbers,
+        registrationId: result.registrationId,
+        success: true,
+        attempts: result.attempts
+      });
 
       return result;
 
@@ -244,16 +230,14 @@ exports.registerWithLimit = onCall(async (request) => {
       lastError = error;
 
       if (error instanceof HttpsError) {
-        setTimeout(() => {
-          safeAsyncLog({
-            action: 'register_failed',
-            contact,
-            people,
-            errorCode: error.code,
-            errorMessage: error.message,
-            attempts
-          });
-        }, 100);
+        await safeAsyncLog({
+          action: 'register_failed',
+          contact,
+          people,
+          errorCode: error.code,
+          errorMessage: error.message,
+          attempts
+        });
         throw error;
       }
 
@@ -341,13 +325,11 @@ exports.checkRegistration = onCall(async (request) => {
 
     const data = doc.data();
 
-    setTimeout(() => {
-      safeAsyncLog({
-        action: 'check',
-        contact: cleanContact,
-        registrationId: data.registrationId
-      });
-    }, 100);
+    await safeAsyncLog({
+      action: 'check',
+      contact: cleanContact,
+      registrationId: data.registrationId
+    });
 
     return {
       name: data.name,
@@ -356,8 +338,7 @@ exports.checkRegistration = onCall(async (request) => {
       people: data.people,
       yourNumbers: data.people === 1 ? `${data.startNumber}번` : `${data.startNumber}번, ${data.endNumber}번`,
       timestamp: data.timestamp,
-      registrationId: data.registrationId,
-      checksum: data.checksum
+      registrationId: data.registrationId
     };
   } catch (error) {
     if (error instanceof HttpsError) {

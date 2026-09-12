@@ -1050,11 +1050,6 @@ export default function RegistrationForm() {
                       <strong>신청 시각:</strong> 
                       <span>{formatTimestamp(checkResult.timestamp)}</span>
                     </div>
-                    {checkResult.checksum && (
-                      <div className="text-xs text-gray-500 mt-2 pt-2 border-t">
-                        확인코드: {checkResult.checksum}
-                      </div>
-                    )}
                   </div>
                 </div>
               )}

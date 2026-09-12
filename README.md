@@ -72,14 +72,14 @@ Firebase Cloud Functions v2 (asia-northeast3) · Firestore · React 19 · Vite 6
 ```
 registrations/{contact}
   name, school, contact, people,
-  startNumber, endNumber, registrationId, checksum,
-  status, timestamp, attempts, userAgent, ip
+  startNumber, endNumber, registrationId,
+  status, timestamp, attempts
 
 counters/registrationTotal        ← 모든 경합이 모이는 단일 문서
-  count, version, lastUpdated, lastRegistration
+  count, lastUpdated
 ```
 
-`checksum`(`contact-people-start-end`)은 마감 후 순번 분쟁이 생겼을 때의 검증 근거입니다.
+`registrationLogs`에는 신청 성공·실패·조회 액션이 기록됩니다. 응답을 반환하기 전에 `await`로 기록해 유실을 막습니다 — Cloud Functions v2는 응답 후 인스턴스를 freeze할 수 있어, 반환 뒤로 미룬 비동기 작업은 실행이 보장되지 않기 때문입니다.
 
 ## API (Callable Functions)
 
@@ -134,9 +134,10 @@ firebase deploy --only functions
 전체 리뷰는 [`CODE_REVIEW.md`](./CODE_REVIEW.md)에 있습니다. 그중 아직 해결하지 않은 것들:
 
 - **`checkRegistration`의 개인정보 노출.** 인증 없이 연락처 하나로 신청자의 이름·학교를 반환합니다. `010-0000-0000`부터 자동 열거하면 등록자 명부를 수집할 수 있습니다. App Check 적용, 이름+연락처 2요소 매칭, 응답 마스킹, rate limit이 필요합니다. **가장 시급한 항목입니다.**
-- **`setTimeout` 기반 로그 기록.** `safeAsyncLog` 자체는 구현되어 있지만 `setTimeout(…, 100)` 안에서 호출됩니다. Cloud Functions v2는 응답 반환 직후 인스턴스가 freeze될 수 있어 콜백 실행이 보장되지 않습니다. 로그가 유실될 수 있으므로 `await`로 바꾸거나 Scheduled Function으로 분리해야 합니다.
+- **`registrationLogs`를 읽는 수단이 없습니다.** 기록은 남지만 조회 API도 관리자 화면도 없어, 현재는 Firebase 콘솔에서 직접 보는 것이 유일한 접근 경로입니다. 보관 기간(TTL) 정책도 설정되어 있지 않습니다.
+- **정합성 검증 장치가 없습니다.** 카운터와 등록 문서는 같은 트랜잭션에서 갱신되므로 앱을 통한 신청 경로에서는 어긋날 수 없지만, 콘솔에서 문서를 직접 지우는 등 앱 외부 경로로 생긴 불일치는 감지되지 않습니다.
 - **정원과 오픈 시각이 하드코딩되어 있습니다.** 이 행사 전용이라 다른 행사에 재사용할 수 없습니다.
 - **`firestore.rules`가 저장소에 없습니다.** 클라이언트 직접 읽기가 차단되어 있는지 코드만으로 확인할 수 없습니다.
-- **`RegistrationForm.jsx`가 1,078줄 단일 컴포넌트입니다.** useEffect 6개, 내부 서브컴포넌트 3개가 한 파일에 있어 컴포넌트·훅 단위 분해가 필요합니다.
+- **`RegistrationForm.jsx`가 1,073줄 단일 컴포넌트입니다.** useEffect 6개, 내부 서브컴포넌트 3개가 한 파일에 있어 컴포넌트·훅 단위 분해가 필요합니다.
 - **자동화 테스트가 없습니다.** 특히 동시성 시나리오는 Emulator 기반 통합 테스트와 부하 테스트로 회귀를 막아야 할 영역입니다.
 - **`index.html`이 Vite 기본 템플릿 그대로입니다.** `lang="en"`, `title`이 "Vite + React"로 남아 있어 접근성·SEO·공유 미리보기에 영향이 있습니다.
