@@ -1,0 +1,12 @@
+rules_version = '2';
+
+// 클라이언트는 Firestore에 직접 접근하지 않는다.
+// 모든 읽기와 쓰기는 Cloud Functions(Admin SDK)를 경유하며,
+// Admin SDK는 이 규칙의 적용을 받지 않는다.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
